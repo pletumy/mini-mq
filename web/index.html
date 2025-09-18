@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>miniMQ — Multi-topic UI</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --card: #ffffff;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --success: #16a34a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: var(--bg);
+      color: #111827;
+      padding: 20px;
+    }
+    header { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+    header h1 { margin:0; font-size:20px; }
+    .layout { display: grid; grid-template-columns: 360px 1fr 360px; gap: 16px; align-items: start; }
+
+    .card {
+      background: var(--card);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+      border: 1px solid rgba(15,23,42,0.04);
+    }
+
+    /* Publish form */
+    .form-group { margin-bottom:10px; }
+    label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+    input[type="text"], textarea {
+      width:100%;
+      padding:8px 10px;
+      border:1px solid #e5e7eb;
+      border-radius:6px;
+      font-size:14px;
+      background: #fff;
+    }
+    textarea { min-height:72px; resize:vertical; }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius:6px;
+      cursor:pointer;
+      font-weight:600;
+    }
+    button.ghost { background: transparent; color: var(--accent); border: 1px solid rgba(37,99,235,0.12); }
+    button.danger { background: var(--danger); }
+
+    /* Subscriptions list */
+    .subs-list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+    .topic-row { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:8px; border-radius:6px; border:1px solid #f1f5f9; transition: all 0.2s ease; }
+    .topic-row:hover { border-color: var(--accent); background: rgba(37,99,235,0.02); }
+    .topic-name { font-weight:600; }
+    .badge { font-size:12px; color:var(--muted); padding: 2px 6px; border-radius: 4px; background: rgba(107,114,128,0.1); }
+    .badge.subscribed { background: rgba(22,163,74,0.1); color: var(--success); }
+    .badge.available { background: rgba(107,114,128,0.1); color: var(--muted); }
+    .topic-actions { display: flex; gap: 6px; }
+    .topic-actions button { font-size: 12px; padding: 4px 8px; }
+    .topics-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .topics-stats { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .loading-indicator { display: inline-block; width: 12px; height: 12px; border: 2px solid #f3f3f3; border-top: 2px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-left: 8px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* Messages panel */
+    .messages {
+      height: 60vh;
+      overflow: auto;
+      padding: 8px;
+      border-radius:6px;
+      border:1px solid #eef2ff;
+      background: linear-gradient(180deg,#ffffff, #fbfdff);
+    }
+    .msg {
+      padding:8px;
+      border-radius:6px;
+      margin-bottom:8px;
+      border:1px solid #f1f5f9;
+      background: #fff;
+      font-size:13px;
+    }
+    .msg-meta { font-size:12px; color:var(--muted); margin-top:6px; }
+    .topic-header { display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:8px; }
+
+    footer { margin-top:16px; font-size:12px; color:var(--muted); }
+    .status-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+    .connected { background: var(--success); }
+    .disconnected { background: var(--danger); }
+    .small { font-size:12px; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>miniMQ — Multi-topic Demo</h1>
+    <div class="small" id="serverStatus">Server: <span id="statusText">unknown</span></div>
+  </header>
+
+  <div class="layout">
+    <!-- Left: Publish panel -->
+    <div class="card">
+      <h3 style="margin:0 0 8px 0">Publish</h3>
+      <div class="form-group">
+        <label for="pubTopic">Topic</label>
+        <input id="pubTopic" type="text" placeholder="e.g. orders" />
+      </div>
+      <div class="form-group">
+        <label for="pubMsg">Message</label>
+        <textarea id="pubMsg" placeholder="Your message..."></textarea>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="pubBtn">Publish</button>
+        <button id="pubClearBtn" class="ghost">Clear</button>
+      </div>
+
+      <hr style="margin:12px 0" />
+
+      <div>
+        <label class="small">Quick publishes</label>
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <button class="ghost" onclick="quickPub('orders', 'Order created #'+Date.now())">Order</button>
+          <button class="ghost" onclick="quickPub('payments', 'Payment success #'+Date.now())">Payment</button>
+          <button class="ghost" onclick="quickPub('notifications', 'Notify #'+Date.now())">Notify</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Middle: messages canvas -->
+    <div class="card">
+      <div class="topic-header">
+        <div>
+          <h3 style="margin:0">Messages</h3>
+          <div class="small" id="messagesFilterInfo">Showing all messages (newest on top)</div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <button id="showAllBtn" class="ghost" onclick="showAllMessages()">Show All</button>
+          <button id="loadHistoryBtn" class="ghost" onclick="loadCurrentTopicHistory()" style="display: none;">Load History</button>
+          <label class="small">Auto-scroll</label>
+          <input id="autoScroll" type="checkbox" checked />
+        </div>
+      </div>
+
+      <div id="messages" class="messages" aria-live="polite"></div>
+    </div>
+
+    <!-- Right: Subscriptions -->
+    <div class="card">
+      <h3 style="margin:0 0 8px 0">Subscriptions</h3>
+
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <input id="subTopicInput" type="text" placeholder="topic to subscribe (e.g. orders)" />
+        <button id="subBtn" class="ghost">Subscribe</button>
+      </div>
+
+      <div id="subsList" class="subs-list">
+        <!-- topic rows injected here -->
+      </div>
+
+      <hr style="margin:12px 0" />
+
+      <div>
+        <label class="small">All subscriptions: <span id="subsCount">0</span></label>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span id="footerNote" class="small">Tip: open multiple tabs to simulate multiple consumers • Backend stores last 10 messages per topic</span>
+  </footer>
+
+  <script>
+    // ---- State ----
+    const subscriptions = new Map(); // topic -> { es: EventSource, connected: bool, count: number }
+    const messageLimitPerTopic = 200; // keep memory bounded
+    const messages = []; // array of {topic, payload/object, ts, id} newest first
+    const messagesPerTopic = new Map();
+    let currentFilterTopic = null; // track which topic is currently being filtered
+
+    // UI elements
+    const pubTopicEl = document.getElementById('pubTopic');
+    const pubMsgEl = document.getElementById('pubMsg');
+    const pubBtn = document.getElementById('pubBtn');
+    const pubClearBtn = document.getElementById('pubClearBtn');
+    const subTopicInput = document.getElementById('subTopicInput');
+    const subBtn = document.getElementById('subBtn');
+    const subsListEl = document.getElementById('subsList');
+    const messagesEl = document.getElementById('messages');
+    const subsCountEl = document.getElementById('subsCount');
+    const autoScrollEl = document.getElementById('autoScroll');
+    const statusTextEl = document.getElementById('statusText');
+    // topics UI
+    let topicsListEl;
+
+    // ---- Helpers ----
+    function apiPublish(topic, message) {
+      return fetch('/publish', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ topic, message })
+      }).then(res => res.json());
+    }
+
+    // Load message history for a topic
+    async function loadTopicHistory(topic) {
+      try {
+        const res = await fetch(`/topics/${topic}/messages`);
+        if (!res.ok) {
+          console.log(`No history available for topic: ${topic}`);
+          return;
+        }
+        const messages = await res.json();
+        console.log(`Loaded ${messages.length} historical messages for topic: ${topic}`);
+        
+        // Add historical messages to UI (in reverse order to maintain newest-first)
+        for (let i = messages.length - 1; i >= 0; i--) {
+          addMessage(topic, messages[i]);
+        }
+      } catch (err) {
+        console.log(`Failed to load history for topic: ${topic}`, err);
+      }
+    }
+
+    function renderSubs() {
+      subsListEl.innerHTML = '';
+      for (const [topic, info] of subscriptions.entries()) {
+        const row = document.createElement('div');
+        row.className = 'topic-row';
+
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.gap = '8px';
+        left.style.alignItems = 'center';
+
+        const name = document.createElement('div');
+        name.className = 'topic-name';
+        name.textContent = topic;
+
+        const badge = document.createElement('div');
+        badge.className = 'badge';
+        const count = messagesPerTopic.get(topic) || [];
+        badge.textContent = `${count.length} msgs`;
+
+        left.appendChild(name);
+        left.appendChild(badge);
+
+        const right = document.createElement('div');
+        right.style.display = 'flex';
+        right.style.gap = '6px';
+
+        const gotoBtn = document.createElement('button');
+        gotoBtn.className = 'ghost';
+        gotoBtn.textContent = 'Show';
+        gotoBtn.onclick = () => { showTopicOnly(topic); };
+
+        const unsubBtn = document.createElement('button');
+        unsubBtn.className = 'danger';
+        unsubBtn.textContent = 'Unsub';
+        unsubBtn.onclick = () => { unsubscribeTopic(topic); };
+
+        right.appendChild(gotoBtn);
+        right.appendChild(unsubBtn);
+
+        row.appendChild(left);
+        row.appendChild(right);
+        subsListEl.appendChild(row);
+      }
+      subsCountEl.textContent = subscriptions.size;
+    }
+
+    function addMessage(topic, msgObj) {
+      // msgObj expected {id,topic,message,ts} or string
+      const item = {
+        topic,
+        id: msgObj.id || null,
+        payload: msgObj.message || msgObj.payload || (typeof msgObj === 'string' ? msgObj : JSON.stringify(msgObj)),
+        ts: msgObj.ts || new Date().toISOString()
+      };
+      
+      // Check for duplicates by ID (if available)
+      if (item.id) {
+        const existingGlobal = messages.find(m => m.id === item.id);
+        if (existingGlobal) {
+          console.log(`Duplicate message detected (ID: ${item.id}), skipping`);
+          return;
+        }
+      }
+      
+      // push to top
+      messages.unshift(item);
+      // per-topic
+      if (!messagesPerTopic.has(topic)) messagesPerTopic.set(topic, []);
+      const arr = messagesPerTopic.get(topic);
+      arr.unshift(item);
+      // enforce size
+      if (arr.length > messageLimitPerTopic) arr.pop();
+      if (messages.length > messageLimitPerTopic * 10) messages.pop(); // global safety
+      // render to DOM
+      renderMessages(currentFilterTopic);
+      renderSubs(); // update counts
+    }
+
+    function renderMessages(filterTopic = null) {
+      messagesEl.innerHTML = '';
+      const list = filterTopic ? (messagesPerTopic.get(filterTopic) || []) : messages;
+      for (const m of list) {
+        const div = document.createElement('div');
+        div.className = 'msg';
+        const payload = document.createElement('div');
+        payload.textContent = `[${m.topic}] ${m.payload}`;
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta';
+        meta.textContent = `id=${m.id || '-'} • ts=${m.ts}`;
+        div.appendChild(payload);
+        div.appendChild(meta);
+        messagesEl.appendChild(div);
+      }
+      if (autoScrollEl.checked) messagesEl.scrollTop = 0; // newest on top
+    }
+
+    function showTopicOnly(topic) {
+      currentFilterTopic = topic;
+      renderMessages(topic);
+      const filterInfo = document.getElementById('messagesFilterInfo');
+      const loadHistoryBtn = document.getElementById('loadHistoryBtn');
+      
+      if (filterInfo) {
+        const msgCount = messagesPerTopic.get(topic)?.length || 0;
+        filterInfo.textContent = `Showing ${msgCount} messages from topic: ${topic}`;
+      }
+      
+      // Show load history button when filtering a topic
+      if (loadHistoryBtn) {
+        loadHistoryBtn.style.display = 'inline-block';
+      }
+      
+      // Optionally load history if we don't have many messages
+      const currentCount = messagesPerTopic.get(topic)?.length || 0;
+      if (currentCount < 5) {
+        loadTopicHistory(topic);
+      }
+    }
+
+    function showAllMessages() {
+      currentFilterTopic = null;
+      renderMessages();
+      const filterInfo = document.getElementById('messagesFilterInfo');
+      const loadHistoryBtn = document.getElementById('loadHistoryBtn');
+      
+      if (filterInfo) {
+        filterInfo.textContent = 'Showing all messages (newest on top)';
+      }
+      
+      // Hide load history button when showing all messages
+      if (loadHistoryBtn) {
+        loadHistoryBtn.style.display = 'none';
+      }
+    }
+
+    function loadCurrentTopicHistory() {
+      if (currentFilterTopic) {
+        loadTopicHistory(currentFilterTopic);
+      }
+    }
+
+    // ---- Sub / Unsub ----
+    function subscribeTopic(topic) {
+      if (!topic) return;
+      if (subscriptions.has(topic)) {
+        alert(`Already subscribed to "${topic}"`);
+        return;
+      }
+
+      const es = new EventSource(`/subscribe?topic=${encodeURIComponent(topic)}`);
+      subscriptions.set(topic, { es, connected: false });
+      // initialize per-topic array
+      if (!messagesPerTopic.has(topic)) messagesPerTopic.set(topic, []);
+
+      es.onopen = () => {
+        const info = subscriptions.get(topic);
+        if (info) info.connected = true;
+        renderSubs();
+        console.log(`Connected to topic: ${topic}`);
+        
+        // Load history after connection is established
+        // This ensures we get history even if SSE history didn't work
+        setTimeout(() => {
+          const currentCount = messagesPerTopic.get(topic)?.length || 0;
+          if (currentCount === 0) {
+            console.log(`No messages received via SSE, loading history for: ${topic}`);
+            loadTopicHistory(topic);
+          }
+        }, 1000);
+      };
+      es.onmessage = (ev) => {
+        // SSE data: expected to be JSON
+        try {
+          const data = JSON.parse(ev.data);
+          addMessage(topic, data);
+        } catch (err) {
+          // fallback: raw string
+          addMessage(topic, ev.data);
+        }
+      };
+      es.onerror = (err) => {
+        // On error, mark disconnected but keep ES until closed
+        const info = subscriptions.get(topic);
+        if (info) info.connected = false;
+        console.error('EventSource error', topic, err);
+        renderSubs();
+      };
+
+      renderSubs();
+      // Also refresh topics to update subscription status
+      pollTopics();
+    }
+
+    function unsubscribeTopic(topic) {
+      const info = subscriptions.get(topic);
+      if (!info) return;
+      try {
+        info.es.close();
+      } catch (e) {
+        console.warn('close es failed', e);
+      }
+      subscriptions.delete(topic);
+      messagesPerTopic.delete(topic);
+      // also purge messages of that topic from global list
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].topic === topic) messages.splice(i, 1);
+      }
+      renderSubs();
+      renderMessages();
+      // Also refresh topics to update subscription status
+      pollTopics();
+    }
+
+    // cleanup all ES on page unload
+    function cleanupAll() {
+      for (const [topic, info] of subscriptions.entries()) {
+        try { info.es.close(); } catch (e) {}
+      }
+      subscriptions.clear();
+    }
+    window.addEventListener('beforeunload', cleanupAll);
+
+    // ---- UI bindings ----
+    pubBtn.addEventListener('click', async () => {
+      const topic = pubTopicEl.value.trim();
+      const msg = pubMsgEl.value.trim();
+      if (!topic || !msg) { alert('topic and message required'); return; }
+      try {
+        const res = await apiPublish(topic, msg);
+        // success: show in messages too (optional)
+        addMessage(topic, res);
+        pubMsgEl.value = '';
+      } catch (err) {
+        alert('Publish failed: ' + err);
+      }
+    });
+
+    pubClearBtn.addEventListener('click', () => {
+      pubTopicEl.value = '';
+      pubMsgEl.value = '';
+    });
+
+    subBtn.addEventListener('click', () => {
+      const t = subTopicInput.value.trim();
+      if (!t) return alert('enter topic');
+      subscribeTopic(t);
+      subTopicInput.value = '';
+    });
+
+    // quick publish helper used by quick buttons
+    function quickPub(topic, msg) {
+      pubTopicEl.value = topic;
+      pubMsgEl.value = msg;
+      pubBtn.click();
+    }
+
+    // ---- Server health check (simple) ----
+    async function checkServer() {
+      try {
+        const r = await fetch('/health');
+        if (!r.ok) throw new Error('not ok');
+        const txt = await r.text();
+        statusTextEl.textContent = 'up';
+        statusTextEl.style.color = 'green';
+      } catch (err) {
+        statusTextEl.textContent = 'down';
+        statusTextEl.style.color = 'red';
+      }
+    }
+    // initial
+    checkServer();
+    setInterval(checkServer, 10_000);
+
+    // ---- Topics polling & rendering ----
+    function ensureTopicsSection() {
+      // Create topics section below subscriptions card if not exists
+      if (topicsListEl) return;
+      // Find the subscriptions card (right column)
+      const cards = document.querySelectorAll('.layout > .card');
+      const rightCard = cards[2];
+      const hr = document.createElement('hr');
+      hr.style.margin = '12px 0';
+      rightCard.appendChild(hr);
+
+      const header = document.createElement('div');
+      header.className = 'topics-header';
+
+      const left = document.createElement('div');
+      const h = document.createElement('h3');
+      h.textContent = 'Available Topics';
+      h.style.margin = '0';
+      left.appendChild(h);
+
+      const stats = document.createElement('div');
+      stats.className = 'topics-stats';
+      stats.id = 'topicsStats';
+      stats.textContent = '0 topics';
+      left.appendChild(stats);
+
+      header.appendChild(left);
+
+      const right = document.createElement('div');
+      right.style.display = 'flex';
+      right.style.gap = '8px';
+      right.style.alignItems = 'center';
+
+      const refreshBtn = document.createElement('button');
+      refreshBtn.className = 'ghost';
+      refreshBtn.textContent = 'Refresh';
+      refreshBtn.id = 'refreshTopicsBtn';
+      refreshBtn.onclick = () => pollTopics();
+
+      const autoRefreshToggle = document.createElement('label');
+      autoRefreshToggle.style.display = 'flex';
+      autoRefreshToggle.style.alignItems = 'center';
+      autoRefreshToggle.style.gap = '4px';
+      autoRefreshToggle.style.fontSize = '12px';
+      autoRefreshToggle.style.color = 'var(--muted)';
+
+      const autoRefreshCheckbox = document.createElement('input');
+      autoRefreshCheckbox.type = 'checkbox';
+      autoRefreshCheckbox.id = 'autoRefreshTopics';
+      autoRefreshCheckbox.checked = true;
+      autoRefreshCheckbox.onchange = () => {
+        if (autoRefreshCheckbox.checked) {
+          startTopicsPolling();
+        } else {
+          stopTopicsPolling();
+        }
+      };
+
+      autoRefreshToggle.appendChild(autoRefreshCheckbox);
+      autoRefreshToggle.appendChild(document.createTextNode('Auto'));
+
+      right.appendChild(refreshBtn);
+      right.appendChild(autoRefreshToggle);
+      header.appendChild(right);
+
+      rightCard.appendChild(header);
+
+      topicsListEl = document.createElement('div');
+      topicsListEl.id = 'topicsList';
+      topicsListEl.className = 'subs-list';
+      rightCard.appendChild(topicsListEl);
+
+      const note = document.createElement('div');
+      note.className = 'small';
+      note.textContent = 'Click topic name to view messages • Auto-refresh every 8s';
+      rightCard.appendChild(note);
+    }
+
+    function renderTopics(topics) {
+      ensureTopicsSection();
+      topicsListEl.innerHTML = '';
+      
+      // Update stats
+      const statsEl = document.getElementById('topicsStats');
+      if (statsEl) {
+        const count = Array.isArray(topics) ? topics.length : 0;
+        const subscribedCount = Array.isArray(topics) ? topics.filter(t => subscriptions.has(t)).length : 0;
+        statsEl.textContent = `${count} topics (${subscribedCount} subscribed)`;
+      }
+
+      if (!Array.isArray(topics) || topics.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'badge';
+        empty.style.textAlign = 'center';
+        empty.style.padding = '16px';
+        empty.style.fontStyle = 'italic';
+        empty.textContent = 'No topics yet. Publish or subscribe to create topics.';
+        topicsListEl.appendChild(empty);
+        return;
+      }
+
+      // Sort topics: subscribed first, then alphabetically
+      const sortedTopics = [...topics].sort((a, b) => {
+        const aSubscribed = subscriptions.has(a);
+        const bSubscribed = subscriptions.has(b);
+        if (aSubscribed && !bSubscribed) return -1;
+        if (!aSubscribed && bSubscribed) return 1;
+        return a.localeCompare(b);
+      });
+
+      for (const t of sortedTopics) {
+        const row = document.createElement('div');
+        row.className = 'topic-row';
+
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.gap = '8px';
+        left.style.alignItems = 'center';
+        left.style.flex = '1';
+
+        const name = document.createElement('div');
+        name.className = 'topic-name';
+        name.textContent = t;
+        name.style.cursor = 'pointer';
+        name.title = 'Click to view messages for this topic';
+        name.onclick = () => showTopicOnly(t);
+
+        const state = document.createElement('div');
+        state.className = `badge ${subscriptions.has(t) ? 'subscribed' : 'available'}`;
+        state.textContent = subscriptions.has(t) ? 'subscribed' : 'available';
+
+        // Add message count if available
+        const msgCount = messagesPerTopic.get(t)?.length || 0;
+        if (msgCount > 0) {
+          const countBadge = document.createElement('div');
+          countBadge.className = 'badge';
+          countBadge.textContent = `${msgCount} msgs`;
+          countBadge.style.marginLeft = '4px';
+          left.appendChild(countBadge);
+        }
+
+        left.appendChild(name);
+        left.appendChild(state);
+
+        const right = document.createElement('div');
+        right.className = 'topic-actions';
+
+        const subBtnRow = document.createElement('button');
+        if (subscriptions.has(t)) {
+          subBtnRow.className = 'danger';
+          subBtnRow.textContent = 'Unsub';
+          subBtnRow.onclick = () => unsubscribeTopic(t);
+        } else {
+          subBtnRow.className = '';
+          subBtnRow.textContent = 'Subscribe';
+          subBtnRow.onclick = () => subscribeTopic(t);
+        }
+
+        const quickBtn = document.createElement('button');
+        quickBtn.className = 'ghost';
+        quickBtn.textContent = 'Quick Pub';
+        quickBtn.title = 'Quick publish a test message';
+        quickBtn.onclick = () => quickPub(t, `Test message #${Date.now()}`);
+
+        right.appendChild(subBtnRow);
+        right.appendChild(quickBtn);
+
+        row.appendChild(left);
+        row.appendChild(right);
+        topicsListEl.appendChild(row);
+      }
+    }
+
+    let topicsPollingInterval = null;
+
+    async function pollTopics() {
+      const refreshBtn = document.getElementById('refreshTopicsBtn');
+      const loadingIndicator = refreshBtn?.querySelector('.loading-indicator');
+      
+      // Show loading indicator
+      if (refreshBtn && !loadingIndicator) {
+        const indicator = document.createElement('span');
+        indicator.className = 'loading-indicator';
+        refreshBtn.appendChild(indicator);
+      }
+
+      try {
+        const res = await fetch('/topics');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const topics = await res.json();
+        renderTopics(topics);
+      } catch (err) {
+        console.warn('Failed to fetch topics:', err);
+        // Show error state in stats
+        const statsEl = document.getElementById('topicsStats');
+        if (statsEl) {
+          statsEl.textContent = 'Failed to load topics';
+          statsEl.style.color = 'var(--danger)';
+        }
+      } finally {
+        // Remove loading indicator
+        if (loadingIndicator) {
+          loadingIndicator.remove();
+        }
+      }
+    }
+
+    function startTopicsPolling() {
+      if (topicsPollingInterval) return;
+      topicsPollingInterval = setInterval(pollTopics, 8000);
+    }
+
+    function stopTopicsPolling() {
+      if (topicsPollingInterval) {
+        clearInterval(topicsPollingInterval);
+        topicsPollingInterval = null;
+      }
+    }
+
+    // Initial topics render and start polling
+    pollTopics();
+    startTopicsPolling();
+
+    // ---- Debug functions ----
+    window.debugMiniMQ = {
+      loadHistory: loadTopicHistory,
+      getMessages: (topic) => messagesPerTopic.get(topic) || [],
+      getAllMessages: () => messages,
+      getSubscriptions: () => Array.from(subscriptions.keys()),
+      testHistoryAPI: async (topic) => {
+        try {
+          const res = await fetch(`/topics/${topic}/messages`);
+          const data = await res.json();
+          console.log(`History for ${topic}:`, data);
+          return data;
+        } catch (err) {
+          console.error('History API test failed:', err);
+          return null;
+        }
+      }
+    };
+
+    // ---- Init demo state ----
+    // Optionally auto-subscribe to "orders"
+    // subscribeTopic('orders');
+  </script>
+</body>
+</html>

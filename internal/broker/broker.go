@@ -6,46 +6,37 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pletumy/mini-mq/internal/model"
 )
 
 const historySize = 10
 
-type topicData struct {
-	subs    []chan Message
-	history []Message
-}
-
-type Message struct {
-	ID      string    `json:"id"`
-	Topic   string    `json:"topic"`
-	Payload string    `json:"payload"`
-	TS      time.Time `json:"ts"`
-}
-
 type Broker struct {
 	mu     sync.RWMutex
-	topics map[string]*topicData
+	topics map[string]*model.TopicData
+	store  *model.Message
 }
 
-func NewBroker() *Broker {
+func NewBroker(ms *model.Message) *Broker {
 	return &Broker{
-		topics: make(map[string]*topicData),
+		topics: make(map[string]*model.TopicData),
+		store:  ms,
 	}
 }
 
 // tao message moi va gui den toan bo subcribers
-func (b *Broker) Publish(topic, payload string) Message {
-	msg := Message{
+func (b *Broker) Publish(topic, payload string) model.Message {
+	msg := model.Message{
 		ID:      uuid.NewString(),
 		Topic:   topic,
 		Payload: payload,
-		TS:      time.Now(),
+		TS:      time.Now().String(),
 	}
 
 	b.mu.Lock()
 	td, ok := b.topics[topic]
 	if !ok {
-		td = &topicData{}
+		td = &model.TopicData{}
 		b.topics[topic] = td
 	}
 
@@ -65,11 +56,20 @@ func (b *Broker) Publish(topic, payload string) Message {
 	}
 	b.mu.Unlock()
 
+	if b.store != nil {
+		_ = b.store.SaveMessage(0, store.StoredMessage{
+			ID:      msg.ID,
+			Topic:   msg.Topic,
+			Payload: msg.Payload,
+			TS:      msg.TS,
+		})
+	}
+
 	return msg
 }
 
 // sucribers theo topics
-func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan Message {
+func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan model.Message {
 	ch := make(chan Message, 10)
 
 	b.mu.Lock()
@@ -110,7 +110,7 @@ func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan Message {
 	return ch
 }
 
-func (b *Broker) removeSubscriber(topic string, target chan Message) {
+func (b *Broker) removeSubscriber(topic string, target chan model.Message) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	td, ok := b.topics[topic]
@@ -136,7 +136,7 @@ func (b *Broker) GetTopics() []string {
 	return topics
 }
 
-func (b *Broker) GetTopicHistory(topic string) []Message {
+func (b *Broker) GetTopicHistory(topic string) []model.Message {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
